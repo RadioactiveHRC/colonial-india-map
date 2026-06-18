@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>COLONIAL INDIA // IMAGING DATABASE NETWORK</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ===== LOADING SCREEN ===== -->
+  <div id="loader">
+    <div class="crosshair"></div>
+    <div class="title">LOCATING REGION...</div>
+    <div class="sub">COLONIAL INDIA // IMAGING DATABASE NETWORK</div>
+    <div class="barwrap"><div class="bar"></div></div>
+    <div class="pct">ESTABLISHING ORBITAL UPLINK // RENDERING TERRAIN // PLOTTING ASSETS</div>
+  </div>
+
+  <!-- ===== ATMOSPHERE OVERLAYS ===== -->
+  <div id="sweep-lines"></div>
+  <div id="vignette"></div>
+  <div id="scanlines"></div>
+
+  <!-- ===== 3D GLOBE ===== -->
+  <div id="globe"></div>
+
+  <!-- ===== CORNER BRACKETS ===== -->
+  <div class="bracket tl"></div>
+  <div class="bracket tr"></div>
+  <div class="bracket bl"></div>
+  <div class="bracket br"></div>
+
+  <!-- ===== TOP HUD BAR ===== -->
+  <div id="hud-top">
+    <div class="left glitch">COLONIAL INDIA // IMAGING DATABASE NETWORK<span class="cursor"></span></div>
+    <div class="center" id="status-center">ATTACK CHARACTERIZATION SYSTEM ONLINE...<span class="cursor"></span></div>
+    <div class="right">
+      <span class="coords" id="coord-readout">22.000°N 80.000°E</span>
+      <span id="session-time">--</span>
+    </div>
+  </div>
+
+  <!-- ===== SEARCH (top-left) ===== -->
+  <div id="search-wrap" class="hud-panel">
+    <div class="panel-head glitch">// LOCATION QUERY //</div>
+    <div id="search-row">
+      <span class="prompt">&gt;</span>
+      <input id="search-input" type="text" autocomplete="off" spellcheck="false"
+             placeholder="search asset..." />
+    </div>
+    <div id="search-results"></div>
+  </div>
+
+  <!-- ===== LAYER TOGGLES (top-right) ===== -->
+  <div id="layers-wrap" class="hud-panel">
+    <div class="panel-head glitch">// LAYER CONTROL //</div>
+    <div id="layers-body">
+      <div class="switch-row active" data-key="country"><span>COUNTRY BORDERS</span><span class="switch"></span></div>
+      <div class="switch-row active" data-key="state"><span>STATE BORDERS</span><span class="switch"></span></div>
+      <div class="switch-row active" data-key="colonial"><span>COLONIAL EXTENT</span><span class="switch"></span></div>
+      <div class="switch-row active" data-key="markers"><span>CITY MARKERS</span><span class="switch"></span></div>
+      <div class="switch-row active" data-key="t1"><span>TIER 1 // MAJOR</span><span class="switch"></span></div>
+      <div class="switch-row cyan active" data-key="t2"><span>TIER 2 // SECONDARY</span><span class="switch"></span></div>
+      <div class="switch-row active" data-key="t3"><span>TIER 3 // TOWNS</span><span class="switch"></span></div>
+    </div>
+  </div>
+
+  <!-- ===== ZOOM / ALT READOUT (left) ===== -->
+  <div id="zoom-readout" class="hud-panel">
+    <div class="panel-head">// MAGNIFICATION //</div>
+    <div id="zoom-body">
+      <div class="zval"><span id="zoom-val">00.0</span></div>
+      <div class="zbar"><div class="zfill" id="zoom-fill"></div></div>
+      <div id="zoom-btns">
+        <button id="zoom-out" title="orbit out">−</button>
+        <button id="zoom-in" title="orbit in">+</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== RADAR SWEEP (bottom-left) ===== -->
+  <div id="radar" class="hud-panel" style="padding:6px;">
+    <svg viewBox="0 0 100 100">
+      <defs>
+        <radialGradient id="rg" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#f5a623" stop-opacity="0.0"/>
+          <stop offset="80%" stop-color="#f5a623" stop-opacity="0.0"/>
+          <stop offset="100%" stop-color="#f5a623" stop-opacity="0.25"/>
+        </radialGradient>
+        <linearGradient id="sweepg" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#00d4ff" stop-opacity="0.0"/>
+          <stop offset="100%" stop-color="#00d4ff" stop-opacity="0.55"/>
+        </linearGradient>
+      </defs>
+      <circle cx="50" cy="50" r="46" fill="url(#rg)" stroke="#f5a62388" stroke-width="1"/>
+      <circle cx="50" cy="50" r="31" fill="none" stroke="#f5a62355" stroke-width="0.6"/>
+      <circle cx="50" cy="50" r="16" fill="none" stroke="#f5a62355" stroke-width="0.6"/>
+      <line x1="4" y1="50" x2="96" y2="50" stroke="#f5a62333" stroke-width="0.6"/>
+      <line x1="50" y1="4" x2="50" y2="96" stroke="#f5a62333" stroke-width="0.6"/>
+      <g class="radar-sweep">
+        <path d="M50 50 L50 4 A46 46 0 0 1 92 38 Z" fill="url(#sweepg)"/>
+        <line x1="50" y1="50" x2="50" y2="4" stroke="#00d4ff" stroke-width="1"/>
+      </g>
+      <circle cx="50" cy="50" r="2" fill="#f5a623"/>
+    </svg>
+  </div>
+
+  <!-- ===== MINI ORBITAL GLOBE (bottom-right) ===== -->
+  <div id="mini-globe" class="hud-panel">
+    <div class="panel-head">// ORBITAL TRACK //</div>
+    <div class="mg-body">
+      <div class="mg-sphere"><div class="mg-grid"></div><div class="mg-terminator"></div></div>
+      <div class="mg-marker"></div>
+      <div class="mg-label">GEO-SYNC // SUBCONTINENT</div>
+    </div>
+  </div>
+
+  <!-- ===== BOTTOM STATUS BAR ===== -->
+  <div id="hud-bottom">
+    <div class="field city"><span class="lbl">TARGET:</span><span class="val">—</span></div>
+    <div class="field region"><span class="lbl">REGION:</span><span class="val">—</span></div>
+    <div class="field cls"><span class="lbl">CLASS:</span><span class="val">—</span></div>
+    <div class="field" style="margin-left:auto;"><span class="lbl">RENDER:</span><span class="val" style="color:#00d4ff;">WEBGL // 3D ORBIT</span></div>
+  </div>
+
+  <!-- ===== INTEL PANEL ===== -->
+  <aside id="intel">
+    <div id="intel-head">
+      <div class="tag" id="intel-tag">// LOCATION INTEL //</div>
+      <div class="city-name" id="intel-name">—</div>
+      <div class="alias" id="intel-alias"></div>
+    </div>
+    <div id="intel-body">
+      <img id="intel-img" alt="location feed" />
+      <div class="img-meta" id="intel-imgmeta">
+        <span class="f">FEED //</span><span>SRC: WIKIMEDIA COMMONS</span>
+      </div>
+
+      <div class="intel-coords">
+        <span>LAT <b id="intel-lat">—</b></span>
+        <span>LNG <b id="intel-lng">—</b></span>
+      </div>
+
+      <div class="intel-section">
+        <div class="sec-title">KNOWN FOR</div>
+        <p id="intel-known">—</p>
+      </div>
+
+      <div class="intel-section">
+        <div class="sec-title">COLONIAL RECORD</div>
+        <p id="intel-colonial">—</p>
+      </div>
+
+      <div class="classification">
+        <span class="lbl">CLASSIFICATION:</span>
+        <span class="val" id="intel-class">—</span>
+      </div>
+    </div>
+    <div id="intel-close">[ X CLOSE INTEL ]</div>
+  </aside>
+
+  <!-- ===== SCRIPTS ===== -->
+  <script src="https://unpkg.com/globe.gl@2.32.0/dist/globe.gl.min.js"></script>
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
