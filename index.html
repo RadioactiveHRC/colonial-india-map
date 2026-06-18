@@ -24,8 +24,17 @@
   <!-- ===== SUBTLE SCANLINE OVERLAY ===== -->
   <div id="scanlines"></div>
 
-  <!-- ===== 3D GLOBE ===== -->
-  <div id="globe"></div>
+  <!-- ===== 2D VECTOR MAP ===== -->
+  <div id="map-wrap">
+    <svg id="map-svg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+      <g id="layer-graticule"></g>
+      <g id="layer-countries"></g>
+      <g id="layer-colonial"></g>
+      <g id="layer-states"></g>
+      <g id="layer-dots"></g>
+      <g id="layer-labels"></g>
+    </svg>
+  </div>
 
   <!-- ===== CORNER BRACKETS ===== -->
   <div class="bracket tl"></div>
@@ -86,7 +95,7 @@
     <div class="field city"><span class="lbl">TARGET:</span><span class="val">—</span></div>
     <div class="field region"><span class="lbl">REGION:</span><span class="val">—</span></div>
     <div class="field cls"><span class="lbl">CLASS:</span><span class="val">—</span></div>
-    <div class="field" style="margin-left:auto;"><span class="lbl">VIEW:</span><span class="val" style="color:#00d4ff;">LOCKED // SUBCONTINENT</span></div>
+    <div class="field" style="margin-left:auto;"><span class="lbl">RENDER:</span><span class="val" style="color:#00d4ff;">2D VECTOR // SVG</span></div>
   </div>
 
   <!-- ===== INTEL PANEL ===== -->
@@ -126,7 +135,6 @@
   </aside>
 
   <!-- ===== SCRIPTS ===== -->
-  <script src="https://unpkg.com/globe.gl@2.32.0/dist/globe.gl.min.js"></script>
   <script src="data.js"></script>
   <script src="app.js"></script>
 </body>

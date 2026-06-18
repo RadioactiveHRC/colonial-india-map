@@ -1,33 +1,15 @@
 /* ============================================================
    COLONIAL INDIA // IMAGING DATABASE NETWORK
-   3D GLOBE — locked, static-when-idle, no per-frame raycasting
+   2D VECTOR MAP (SVG)  — flat, crisp, fast on any hardware
    ============================================================ */
 
 const COL = { amber: '#f5a623', cyan: '#00d4ff', white: '#d8d8d0' };
 const tierColor = t => t === 1 ? COL.amber : t === 2 ? COL.cyan : COL.white;
 const CLASS_OF = c => c.classification || 'LOCATION';
+const SVGNS = 'http://www.w3.org/2000/svg';
 
-/* Fixed framing over colonial India (camera never moves except button zoom) */
-const HOME_POV = { lat: 21.0, lng: 80.5, altitude: 1.4 };
-
-/* Cap how many Tier-3 towns are drawn (evenly sampled) */
-const T3_DISPLAY_CAP = 120;
-
-/* ============================================================
-   DISPLAY SET (trim Tier 3)
-   ============================================================ */
-const ALL_T1 = CITIES.filter(c => c.tier === 1);
-const ALL_T2 = CITIES.filter(c => c.tier === 2);
-const ALL_T3 = CITIES.filter(c => c.tier === 3);
-
-let SHOWN_T3 = ALL_T3;
-if (ALL_T3.length > T3_DISPLAY_CAP) {
-  SHOWN_T3 = [];
-  const stride = ALL_T3.length / T3_DISPLAY_CAP;
-  for (let i = 0; i < T3_DISPLAY_CAP; i++) SHOWN_T3.push(ALL_T3[Math.floor(i * stride)]);
-}
-const DISPLAY = [...ALL_T1, ...ALL_T2, ...SHOWN_T3];
-
+/* show every city (2D handles it easily) */
+const DISPLAY = CITIES.slice();
 const markerByName = {};
 DISPLAY.forEach(c => {
   markerByName[c.name.toLowerCase()] = c;
@@ -35,76 +17,83 @@ DISPLAY.forEach(c => {
 });
 
 /* ============================================================
-   GLOBE INIT (lean: no bump map, capped pixel ratio)
+   MERCATOR PROJECTION fitted to the subcontinent + neighbours
    ============================================================ */
-const globeEl = document.getElementById('globe');
+const BBOX = { west: 56, east: 102, south: 3.5, north: 39.5 };
+const VIEW_W = 1000;
+const D2R = Math.PI / 180;
+const mercY = lat => Math.log(Math.tan(Math.PI / 4 + (lat * D2R) / 2));
 
-const world = Globe()(globeEl)
-  .backgroundColor('#000000')
-  .showGlobe(true)
-  .showAtmosphere(false)          // no atmosphere shader pass
-  .pointOfView(HOME_POV, 0);
+const rawMinX = BBOX.west * D2R;
+const rawMaxX = BBOX.east * D2R;
+const rawMaxY = mercY(BBOX.north);
+const rawMinY = mercY(BBOX.south);
+const PSCALE = VIEW_W / (rawMaxX - rawMinX);
+const VIEW_H = PSCALE * (rawMaxY - rawMinY);
 
-/* force pixel ratio 1 (huge fragment-count reduction on HiDPI screens) */
-try { world.renderer().setPixelRatio(1); } catch (e) {}
-/* solid dark globe instead of a photographic texture — cheapest per-frame fill */
-try {
-  const m = world.globeMaterial();
-  if (m.color) m.color.set('#0a0e16');
-  if (m.emissive) m.emissive.set('#06080e');
-  m.shininess = 1;
-  if (m.bumpMap) m.bumpMap = null;
-  if (m.map) m.map = null;
-} catch (e) {}
-
-/* ---- camera fully locked (no spin, pan, or scroll-zoom) ---- */
-const controls = world.controls();
-controls.enabled = false;
-controls.autoRotate = false;
-
-/* ============================================================
-   RENDER-ON-DEMAND
-   The animation loop runs ONLY during a zoom tween or boot.
-   When idle the globe is a static frame (0% GPU). Hover/click
-   use math projection — they never trigger a WebGL render.
-   ============================================================ */
-let pauseTimer = null;
-function wake(hold = 700) {
-  try { world.resumeAnimation(); } catch (e) {}
-  if (pauseTimer) clearTimeout(pauseTimer);
-  pauseTimer = setTimeout(() => {
-    try { world.pauseAnimation(); } catch (e) {}
-    updateReadouts();
-  }, hold);
+function project(lat, lng) {
+  return [
+    (lng * D2R - rawMinX) * PSCALE,
+    (rawMaxY - mercY(lat)) * PSCALE
+  ];
+}
+function unproject(x, y) {
+  const lng = (x / PSCALE + rawMinX) / D2R;
+  const my = rawMaxY - y / PSCALE;
+  const lat = (2 * Math.atan(Math.exp(my)) - Math.PI / 2) / D2R;
+  return [lat, lng];
 }
 
-function onResize() {
-  world.width(globeEl.clientWidth);
-  world.height(globeEl.clientHeight);
-  wake(300);
+/* ============================================================
+   SVG SCAFFOLD
+   ============================================================ */
+const svg = document.getElementById('map-svg');
+svg.setAttribute('viewBox', `0 0 ${VIEW_W} ${VIEW_H}`);
+
+const gGrat = document.getElementById('layer-graticule');
+const gCountries = document.getElementById('layer-countries');
+const gColonial = document.getElementById('layer-colonial');
+const gStates = document.getElementById('layer-states');
+const gDots = document.getElementById('layer-dots');
+const gLabels = document.getElementById('layer-labels');
+
+function el(tag, attrs) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
 }
-window.addEventListener('resize', onResize);
-onResize();
+
+/* ---- graticule (faint tactical grid) ---- */
+for (let lng = 60; lng <= 100; lng += 10) {
+  const [x1, y1] = project(BBOX.south, lng), [x2, y2] = project(BBOX.north, lng);
+  gGrat.appendChild(el('line', { x1, y1, x2, y2, stroke: 'rgba(245,166,35,0.10)', 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));
+}
+for (let lat = 10; lat <= 35; lat += 10) {
+  const [x1, y1] = project(lat, BBOX.west), [x2, y2] = project(lat, BBOX.east);
+  gGrat.appendChild(el('line', { x1, y1, x2, y2, stroke: 'rgba(245,166,35,0.10)', 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));
+}
 
 /* ============================================================
-   CITY DOTS — single MERGED mesh (1 draw call, no raycasting)
+   GEOJSON -> SVG PATHS
    ============================================================ */
-world
-  .pointsData(DISPLAY)
-  .pointLat('lat').pointLng('lng')
-  .pointColor(d => tierColor(d.tier))
-  .pointAltitude(0.01)
-  .pointRadius(d => d.tier === 1 ? 0.42 : d.tier === 2 ? 0.3 : 0.17)
-  .pointResolution(6)
-  .pointsMerge(true)
-  .pointsTransitionDuration(0);
+function ringPath(ring) {
+  let d = '';
+  for (let i = 0; i < ring.length; i++) {
+    const [lng, lat] = ring[i];
+    const [x, y] = project(lat, lng);
+    d += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+  }
+  return d + 'Z';
+}
+function geomPath(geom) {
+  let d = '';
+  if (!geom) return d;
+  if (geom.type === 'Polygon') geom.coordinates.forEach(r => d += ringPath(r));
+  else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(p => p.forEach(r => d += ringPath(r)));
+  return d;
+}
 
-/* ============================================================
-   BORDERS — neighbours only + dashed colonial extent (static)
-   ============================================================ */
-let countryFeatures = [];
-let stateFeatures = [];
-
+/* colonial extent polygon */
 const COLONIAL_RING = [
   [71.0,35.5],[74.5,36.8],[78.0,35.2],[79.2,32.5],[81.0,30.3],
   [84.0,28.2],[88.2,27.4],[89.5,27.9],[92.0,26.9],[95.5,28.3],
@@ -114,143 +103,100 @@ const COLONIAL_RING = [
   [68.8,22.0],[67.0,24.0],[64.0,25.4],[62.5,28.5],[61.8,30.5],
   [65.5,31.5],[69.0,34.0],[71.0,35.5]
 ];
-const colonialFeature = {
-  type: 'Feature',
-  properties: { __kind: 'colonial' },
-  geometry: { type: 'Polygon', coordinates: [COLONIAL_RING] }
-};
-const polyKind = f => (f.properties && f.properties.__kind) || 'country';
+const colonialPath = el('path', {
+  d: geomPath({ type: 'Polygon', coordinates: [COLONIAL_RING] }),
+  fill: 'rgba(201,138,46,0.10)',
+  stroke: COL.amber, 'stroke-width': 1.4, 'stroke-dasharray': '7 5',
+  'vector-effect': 'non-scaling-stroke'
+});
+gColonial.appendChild(colonialPath);
 
-world
-  .polygonsData([])
-  .polygonAltitude(f => polyKind(f) === 'colonial' ? 0.012 : polyKind(f) === 'state' ? 0.006 : 0.008)
-  .polygonCapColor(f => polyKind(f) === 'colonial' ? 'rgba(201,138,46,0.08)' : 'rgba(0,0,0,0)')
-  .polygonSideColor(() => 'rgba(0,0,0,0)')
-  .polygonStrokeColor(f => {
-    const k = polyKind(f);
-    if (k === 'colonial') return 'rgba(0,0,0,0)';
-    if (k === 'state') return 'rgba(245,166,35,0.32)';
-    return 'rgba(245,166,35,0.7)';
-  })
-  .polygonsTransitionDuration(0);
-
-world
-  .pathsData([])
-  .pathPoints(d => d.pts)
-  .pathPointLat(p => p[1])
-  .pathPointLng(p => p[0])
-  .pathColor(() => 'rgba(245,166,35,0.85)')
-  .pathStroke(1.4)
-  .pathDashLength(0.04)
-  .pathDashGap(0.025)
-  .pathDashAnimateTime(0)
-  .pathTransitionDuration(0);
-
+/* ---- fetch borders ---- */
 const NEIGHBOURS = new Set([
   'India','Pakistan','Bangladesh','Myanmar','Burma','Sri Lanka','Nepal','Bhutan',
   'Afghanistan','China','Iran','Tajikistan','Turkmenistan','Uzbekistan',
-  'Thailand','Laos','Oman','Kazakhstan','Kyrgyzstan'
+  'Thailand','Laos','Oman','Kazakhstan','Kyrgyzstan','Cambodia','Vietnam','United Arab Emirates','Saudi Arabia'
 ]);
 
 fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
   .then(r => r.ok ? r.json() : Promise.reject('countries ' + r.status))
   .then(gj => {
-    countryFeatures = (gj.features || []).filter(f => {
+    (gj.features || []).forEach(f => {
       const p = f.properties || {};
       const nm = p.ADMIN || p.name || p.NAME || '';
-      return NEIGHBOURS.has(nm);
-    }).map(f => { f.properties = f.properties || {}; f.properties.__kind = 'country'; return f; });
-    refreshPolygons();
+      if (!NEIGHBOURS.has(nm)) return;
+      gCountries.appendChild(el('path', {
+        d: geomPath(f.geometry),
+        fill: '#0b0f18',
+        stroke: 'rgba(245,166,35,0.7)', 'stroke-width': 1.2,
+        'vector-effect': 'non-scaling-stroke',
+        'stroke-linejoin': 'round'
+      }));
+    });
+    // re-stack colonial fill above land, below states
+    gColonial.parentNode.insertBefore(gColonial, gStates);
   })
   .catch(err => console.warn('[COUNTRY GEOJSON]', err));
 
 fetch('https://raw.githubusercontent.com/Subhash9325/GeoJson-Data-of-Indian-States/master/Indian_States')
   .then(r => r.ok ? r.json() : Promise.reject('states ' + r.status))
   .then(gj => {
-    stateFeatures = (gj.features || []).map(f => { f.properties = f.properties || {}; f.properties.__kind = 'state'; return f; });
-    refreshPolygons();
+    (gj.features || []).forEach(f => {
+      gStates.appendChild(el('path', {
+        d: geomPath(f.geometry),
+        fill: 'none',
+        stroke: 'rgba(245,166,35,0.3)', 'stroke-width': 0.7,
+        'vector-effect': 'non-scaling-stroke'
+      }));
+    });
   })
   .catch(err => console.warn('[STATE GEOJSON]', err));
 
 /* ============================================================
-   LAYER STATE + REFRESH
+   CITY DOTS + TIER-1 LABELS
    ============================================================ */
-const layerState = {
-  country: true, state: true, colonial: true,
-  markers: true, t1: true, t2: true, t3: true
-};
+const dotsByTier = { 1: [], 2: [], 3: [] };
 
-function visibleCities() {
-  if (!layerState.markers) return [];
-  return DISPLAY.filter(c => layerState['t' + c.tier]);
-}
-
-function refreshPolygons() {
-  const polys = [];
-  if (layerState.country) polys.push(...countryFeatures);
-  if (layerState.state) polys.push(...stateFeatures);
-  if (layerState.colonial) polys.push(colonialFeature);
-  world.polygonsData(polys);
-  world.pathsData(layerState.colonial ? [{ pts: COLONIAL_RING }] : []);
-  wake(400);
-}
-
-function refreshPoints() {
-  world.pointsData(visibleCities());
-  wake(400);
-}
-
-document.querySelectorAll('.switch-row').forEach(row => {
-  row.addEventListener('click', () => {
-    const key = row.dataset.key;
-    layerState[key] = !layerState[key];
-    row.classList.toggle('active', layerState[key]);
-    refreshPolygons();
-    refreshPoints();
+DISPLAY.forEach((c, i) => {
+  const [x, y] = project(c.lat, c.lng);
+  const r = c.tier === 1 ? 5 : c.tier === 2 ? 3.4 : 2.1;
+  if (c.tier === 1) {
+    const halo = el('circle', { cx: x, cy: y, r: r * 2.4, fill: 'rgba(245,166,35,0.16)' });
+    gDots.appendChild(halo);
+  }
+  const dot = el('circle', {
+    cx: x, cy: y, r,
+    fill: tierColor(c.tier),
+    stroke: 'rgba(0,0,0,0.6)', 'stroke-width': 0.6,
+    'vector-effect': 'non-scaling-stroke',
+    class: 'dot t' + c.tier, 'data-i': i, style: 'cursor:pointer'
   });
+  gDots.appendChild(dot);
+  dotsByTier[c.tier].push(dot);
+
+  if (c.tier === 1) {
+    const t = el('text', {
+      x: x + r + 3, y: y + 3,
+      fill: COL.amber, 'font-size': 11, 'font-family': 'Share Tech Mono, monospace',
+      class: 'maplabel', style: 'pointer-events:none'
+    });
+    t.textContent = c.name.toUpperCase();
+    gLabels.appendChild(t);
+  }
 });
 
 /* ============================================================
-   MATH-BASED HOVER / CLICK PICKING (no WebGL render needed)
+   HOVER / CLICK (native SVG events — cheap)
    ============================================================ */
 const tipEl = document.createElement('div');
 tipEl.id = 'globe-tip';
 document.body.appendChild(tipEl);
+let hoveredCity = null;
 
-function angDist(la1, lo1, la2, lo2) {
-  const R = Math.PI / 180;
-  const a = Math.sin(la1 * R) * Math.sin(la2 * R) +
-            Math.cos(la1 * R) * Math.cos(la2 * R) * Math.cos((lo1 - lo2) * R);
-  return Math.acos(Math.max(-1, Math.min(1, a))) / R; // degrees
-}
-const pickRadius = c => c.tier === 1 ? 16 : c.tier === 2 ? 13 : 9;
-
-function pickCity(clientX, clientY) {
-  const rect = globeEl.getBoundingClientRect();
-  const x = clientX - rect.left, y = clientY - rect.top;
-  const pov = world.pointOfView();
-  const cities = visibleCities();
-  let best = null, bestD = Infinity;
-  for (let i = 0; i < cities.length; i++) {
-    const c = cities[i];
-    if (angDist(pov.lat, pov.lng, c.lat, c.lng) > 88) continue; // skip far side
-    const sc = world.getScreenCoords(c.lat, c.lng, 0.01);
-    if (!sc) continue;
-    const r = pickRadius(c);
-    const dx = sc.x - x, dy = sc.y - y, d = dx * dx + dy * dy;
-    if (d <= r * r && d < bestD) { bestD = d; best = c; }
-  }
-  return best;
-}
-
-let hoverTs = 0, hoveredCity = null;
-globeEl.addEventListener('pointermove', e => {
-  const now = performance.now();
-  if (now - hoverTs < 50) return;
-  hoverTs = now;
-  const c = pickCity(e.clientX, e.clientY);
-  if (c) {
-    globeEl.style.cursor = 'pointer';
+gDots.addEventListener('pointermove', e => {
+  const t = e.target;
+  if (t.classList && t.classList.contains('dot')) {
+    const c = DISPLAY[+t.getAttribute('data-i')];
     tipEl.innerHTML =
       `<span class="ht-name">${c.name.toUpperCase()}</span>` +
       `<span class="ht-cls">T${c.tier} // ${CLASS_OF(c)}</span>`;
@@ -258,16 +204,87 @@ globeEl.addEventListener('pointermove', e => {
     tipEl.style.left = (e.clientX + 14) + 'px';
     tipEl.style.top = (e.clientY - 8) + 'px';
     if (c !== hoveredCity) { updateBottomBar(c); hoveredCity = c; }
-  } else {
-    globeEl.style.cursor = 'default';
-    tipEl.style.display = 'none';
-    hoveredCity = null;
   }
 });
-globeEl.addEventListener('pointerleave', () => { tipEl.style.display = 'none'; });
-globeEl.addEventListener('click', e => {
-  const c = pickCity(e.clientX, e.clientY);
-  if (c) openIntel(c);
+gDots.addEventListener('pointerout', e => {
+  if (e.target.classList && e.target.classList.contains('dot')) { tipEl.style.display = 'none'; hoveredCity = null; }
+});
+gDots.addEventListener('click', e => {
+  if (e.target.classList && e.target.classList.contains('dot')) openIntel(DISPLAY[+e.target.getAttribute('data-i')]);
+});
+
+/* ============================================================
+   ZOOM + PAN  (viewBox based)
+   ============================================================ */
+let vbX = 0, vbY = 0, vbW = VIEW_W, vbH = VIEW_H;
+const MIN_W = VIEW_W / 7;   // max zoom in
+function applyViewBox() {
+  vbX = Math.max(0, Math.min(VIEW_W - vbW, vbX));
+  vbY = Math.max(0, Math.min(VIEW_H - vbH, vbY));
+  svg.setAttribute('viewBox', `${vbX.toFixed(1)} ${vbY.toFixed(1)} ${vbW.toFixed(1)} ${vbH.toFixed(1)}`);
+  updateReadouts();
+}
+function clientToUser(cx, cy) {
+  const p = svg.createSVGPoint(); p.x = cx; p.y = cy;
+  const u = p.matrixTransform(svg.getScreenCTM().inverse());
+  return [u.x, u.y];
+}
+function zoomBy(factor, fx, fy) {
+  let nw = Math.max(MIN_W, Math.min(VIEW_W, vbW * factor));
+  let nh = nw * (VIEW_H / VIEW_W);
+  vbX = fx - (fx - vbX) * (nw / vbW);
+  vbY = fy - (fy - vbY) * (nh / vbH);
+  vbW = nw; vbH = nh;
+  applyViewBox();
+}
+
+svg.addEventListener('wheel', e => {
+  e.preventDefault();
+  const [ux, uy] = clientToUser(e.clientX, e.clientY);
+  zoomBy(e.deltaY > 0 ? 1.18 : 0.85, ux, uy);
+}, { passive: false });
+
+/* drag to pan */
+let dragging = false, lastX = 0, lastY = 0, moved = false;
+svg.addEventListener('pointerdown', e => { dragging = true; moved = false; lastX = e.clientX; lastY = e.clientY; });
+window.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const ctm = svg.getScreenCTM();
+  vbX -= (e.clientX - lastX) / ctm.a;
+  vbY -= (e.clientY - lastY) / ctm.d;
+  lastX = e.clientX; lastY = e.clientY; moved = true;
+  applyViewBox();
+});
+window.addEventListener('pointerup', () => { dragging = false; });
+svg.addEventListener('pointermove', e => {
+  if (dragging) return;
+  const [ux, uy] = clientToUser(e.clientX, e.clientY);
+  const [lat, lng] = unproject(ux, uy);
+  coordReadout.textContent = `${lat.toFixed(2)}°N ${lng.toFixed(2)}°E`;
+});
+
+document.getElementById('zoom-in').addEventListener('click', () => zoomBy(0.7, vbX + vbW / 2, vbY + vbH / 2));
+document.getElementById('zoom-out').addEventListener('click', () => zoomBy(1.42, vbX + vbW / 2, vbY + vbH / 2));
+
+/* ============================================================
+   LAYER TOGGLES
+   ============================================================ */
+const layerState = { country: true, state: true, colonial: true, markers: true, t1: true, t2: true, t3: true };
+function applyLayers() {
+  gCountries.style.display = layerState.country ? '' : 'none';
+  gStates.style.display = layerState.state ? '' : 'none';
+  gColonial.style.display = layerState.colonial ? '' : 'none';
+  const show = t => (layerState.markers && layerState['t' + t]) ? '' : 'none';
+  [1, 2, 3].forEach(t => dotsByTier[t].forEach(d => d.style.display = show(t)));
+  gLabels.style.display = (layerState.markers && layerState.t1) ? '' : 'none';
+}
+document.querySelectorAll('.switch-row').forEach(row => {
+  row.addEventListener('click', () => {
+    const key = row.dataset.key;
+    layerState[key] = !layerState[key];
+    row.classList.toggle('active', layerState[key]);
+    applyLayers();
+  });
 });
 
 /* ============================================================
@@ -322,7 +339,6 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeIntel()
 const bCity = document.querySelector('#hud-bottom .city .val');
 const bRegion = document.querySelector('#hud-bottom .region .val');
 const bClass = document.querySelector('#hud-bottom .cls .val');
-
 function regionGuess(lat, lng) {
   if (lng < 66) return 'BALOCHISTAN / MAKRAN';
   if (lat > 30 && lng < 78) return 'PUNJAB / FRONTIER';
@@ -341,11 +357,19 @@ function updateBottomBar(city) {
 }
 
 /* ============================================================
-   SEARCH (opens intel; keeps the fixed framing)
+   SEARCH
    ============================================================ */
 const searchInput = document.getElementById('search-input');
 const searchResults = document.getElementById('search-results');
 
+function flyToCity(city) {
+  // centre the city and zoom in
+  vbW = MIN_W * 1.8; vbH = vbW * (VIEW_H / VIEW_W);
+  const [x, y] = project(city.lat, city.lng);
+  vbX = x - vbW / 2; vbY = y - vbH / 2;
+  applyViewBox();
+  openIntel(city);
+}
 function renderResults(q) {
   const query = q.trim().toLowerCase();
   if (!query) { searchResults.classList.remove('show'); searchResults.innerHTML = ''; return; }
@@ -355,11 +379,9 @@ function renderResults(q) {
     if (hit && !seen.has(c.name)) { seen.add(c.name); return true; }
     return false;
   }).slice(0, 12);
-
   if (!matches.length) {
     searchResults.innerHTML = `<div class="search-item"><span class="nm" style="color:#7a7a72">NO MATCH IN DATABASE</span></div>`;
-    searchResults.classList.add('show');
-    return;
+    searchResults.classList.add('show'); return;
   }
   searchResults.innerHTML = matches.map(c =>
     `<div class="search-item" data-name="${c.name.toLowerCase()}">
@@ -371,7 +393,7 @@ function renderResults(q) {
     const nm = item.dataset.name;
     if (!nm) return;
     item.addEventListener('click', () => {
-      openIntel(markerByName[nm]);
+      flyToCity(markerByName[nm]);
       searchResults.classList.remove('show');
       searchInput.value = markerByName[nm].name;
     });
@@ -383,7 +405,7 @@ searchInput.addEventListener('keydown', e => {
     const q = searchInput.value.trim().toLowerCase();
     const city = markerByName[q] ||
       DISPLAY.find(c => c.name.toLowerCase().startsWith(q) || (c.alias && c.alias.toLowerCase().startsWith(q)));
-    if (city) { openIntel(city); searchResults.classList.remove('show'); }
+    if (city) { flyToCity(city); searchResults.classList.remove('show'); }
   }
 });
 document.addEventListener('click', e => {
@@ -391,35 +413,17 @@ document.addEventListener('click', e => {
 });
 
 /* ============================================================
-   ZOOM READOUT + COORDS
+   READOUTS + CLOCK
    ============================================================ */
 const zVal = document.getElementById('zoom-val');
 const zFill = document.getElementById('zoom-fill');
 const coordReadout = document.getElementById('coord-readout');
-
 function updateReadouts() {
-  const p = world.pointOfView();
-  const mag = (1 / Math.max(p.altitude, 0.4)) * 1.5 + 1;
+  const mag = VIEW_W / vbW;
   zVal.textContent = mag.toFixed(1).padStart(4, '0');
-  const pct = (1 - (p.altitude - 0.5) / (2.2 - 0.5)) * 100;
+  const pct = (mag - 1) / (VIEW_W / MIN_W - 1) * 100;
   zFill.style.width = Math.max(4, Math.min(100, pct)) + '%';
-  coordReadout.textContent = `${p.lat.toFixed(2)}°N ${p.lng.toFixed(2)}°E`;
 }
-
-document.getElementById('zoom-in').addEventListener('click', () => {
-  const p = world.pointOfView();
-  world.pointOfView({ altitude: Math.max(0.5, p.altitude * 0.72) }, 420);
-  wake(650);
-});
-document.getElementById('zoom-out').addEventListener('click', () => {
-  const p = world.pointOfView();
-  world.pointOfView({ altitude: Math.min(2.2, p.altitude * 1.38) }, 420);
-  wake(650);
-});
-
-/* ============================================================
-   CLOCK + STATUS
-   ============================================================ */
 function tick() {
   const d = new Date();
   const pad = n => String(n).padStart(2, '0');
@@ -428,26 +432,14 @@ function tick() {
     `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} ZULU`;
 }
 setInterval(tick, 1000); tick();
-
-setTimeout(() => {
-  document.getElementById('status-center').textContent = 'COLONIAL INDIA // INTEL ACTIVE';
-}, 1800);
+setTimeout(() => { document.getElementById('status-center').textContent = 'COLONIAL INDIA // INTEL ACTIVE'; }, 1500);
 
 /* ============================================================
-   BOOT — brief calm zoom-in, then settle & freeze
+   BOOT
    ============================================================ */
-function boot() {
-  refreshPolygons();
-  refreshPoints();
-  updateReadouts();
-
-  world.pointOfView({ lat: HOME_POV.lat, lng: HOME_POV.lng, altitude: 2.0 }, 0);
-  setTimeout(() => { world.pointOfView(HOME_POV, 1500); wake(1900); }, 250);
-
-  setTimeout(() => {
-    const loader = document.getElementById('loader');
-    if (loader) { loader.classList.add('hide'); setTimeout(() => loader.remove(), 600); }
-  }, 1700);
-}
-window.addEventListener('load', boot);
-if (document.readyState === 'complete') boot();
+applyLayers();
+applyViewBox();
+setTimeout(() => {
+  const loader = document.getElementById('loader');
+  if (loader) { loader.classList.add('hide'); setTimeout(() => loader.remove(), 600); }
+}, 900);
