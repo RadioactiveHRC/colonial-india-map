@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>COLONIAL INDIA // IMAGING DATABASE NETWORK</title>
 
-  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet" />
@@ -20,12 +19,9 @@
     <div class="title">LOCATING REGION...</div>
     <div class="sub">COLONIAL INDIA // IMAGING DATABASE NETWORK</div>
     <div class="barwrap"><div class="bar"></div></div>
-    <div class="pct">ESTABLISHING ORBITAL UPLINK // RENDERING TERRAIN // PLOTTING ASSETS</div>
   </div>
 
-  <!-- ===== ATMOSPHERE OVERLAYS ===== -->
-  <div id="sweep-lines"></div>
-  <div id="vignette"></div>
+  <!-- ===== SUBTLE SCANLINE OVERLAY ===== -->
   <div id="scanlines"></div>
 
   <!-- ===== 3D GLOBE ===== -->
@@ -39,17 +35,17 @@
 
   <!-- ===== TOP HUD BAR ===== -->
   <div id="hud-top">
-    <div class="left glitch">COLONIAL INDIA // IMAGING DATABASE NETWORK<span class="cursor"></span></div>
-    <div class="center" id="status-center">ATTACK CHARACTERIZATION SYSTEM ONLINE...<span class="cursor"></span></div>
+    <div class="left">COLONIAL INDIA // IMAGING DATABASE NETWORK<span class="cursor"></span></div>
+    <div class="center" id="status-center">ESTABLISHING UPLINK...</div>
     <div class="right">
-      <span class="coords" id="coord-readout">22.000°N 80.000°E</span>
+      <span class="coords" id="coord-readout">21.00°N 80.50°E</span>
       <span id="session-time">--</span>
     </div>
   </div>
 
   <!-- ===== SEARCH (top-left) ===== -->
   <div id="search-wrap" class="hud-panel">
-    <div class="panel-head glitch">// LOCATION QUERY //</div>
+    <div class="panel-head">// LOCATION QUERY //</div>
     <div id="search-row">
       <span class="prompt">&gt;</span>
       <input id="search-input" type="text" autocomplete="off" spellcheck="false"
@@ -60,7 +56,7 @@
 
   <!-- ===== LAYER TOGGLES (top-right) ===== -->
   <div id="layers-wrap" class="hud-panel">
-    <div class="panel-head glitch">// LAYER CONTROL //</div>
+    <div class="panel-head">// LAYER CONTROL //</div>
     <div id="layers-body">
       <div class="switch-row active" data-key="country"><span>COUNTRY BORDERS</span><span class="switch"></span></div>
       <div class="switch-row active" data-key="state"><span>STATE BORDERS</span><span class="switch"></span></div>
@@ -72,53 +68,16 @@
     </div>
   </div>
 
-  <!-- ===== ZOOM / ALT READOUT (left) ===== -->
+  <!-- ===== ZOOM READOUT (left) ===== -->
   <div id="zoom-readout" class="hud-panel">
     <div class="panel-head">// MAGNIFICATION //</div>
     <div id="zoom-body">
       <div class="zval"><span id="zoom-val">00.0</span></div>
       <div class="zbar"><div class="zfill" id="zoom-fill"></div></div>
       <div id="zoom-btns">
-        <button id="zoom-out" title="orbit out">−</button>
-        <button id="zoom-in" title="orbit in">+</button>
+        <button id="zoom-out" title="zoom out">−</button>
+        <button id="zoom-in" title="zoom in">+</button>
       </div>
-    </div>
-  </div>
-
-  <!-- ===== RADAR SWEEP (bottom-left) ===== -->
-  <div id="radar" class="hud-panel" style="padding:6px;">
-    <svg viewBox="0 0 100 100">
-      <defs>
-        <radialGradient id="rg" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stop-color="#f5a623" stop-opacity="0.0"/>
-          <stop offset="80%" stop-color="#f5a623" stop-opacity="0.0"/>
-          <stop offset="100%" stop-color="#f5a623" stop-opacity="0.25"/>
-        </radialGradient>
-        <linearGradient id="sweepg" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stop-color="#00d4ff" stop-opacity="0.0"/>
-          <stop offset="100%" stop-color="#00d4ff" stop-opacity="0.55"/>
-        </linearGradient>
-      </defs>
-      <circle cx="50" cy="50" r="46" fill="url(#rg)" stroke="#f5a62388" stroke-width="1"/>
-      <circle cx="50" cy="50" r="31" fill="none" stroke="#f5a62355" stroke-width="0.6"/>
-      <circle cx="50" cy="50" r="16" fill="none" stroke="#f5a62355" stroke-width="0.6"/>
-      <line x1="4" y1="50" x2="96" y2="50" stroke="#f5a62333" stroke-width="0.6"/>
-      <line x1="50" y1="4" x2="50" y2="96" stroke="#f5a62333" stroke-width="0.6"/>
-      <g class="radar-sweep">
-        <path d="M50 50 L50 4 A46 46 0 0 1 92 38 Z" fill="url(#sweepg)"/>
-        <line x1="50" y1="50" x2="50" y2="4" stroke="#00d4ff" stroke-width="1"/>
-      </g>
-      <circle cx="50" cy="50" r="2" fill="#f5a623"/>
-    </svg>
-  </div>
-
-  <!-- ===== MINI ORBITAL GLOBE (bottom-right) ===== -->
-  <div id="mini-globe" class="hud-panel">
-    <div class="panel-head">// ORBITAL TRACK //</div>
-    <div class="mg-body">
-      <div class="mg-sphere"><div class="mg-grid"></div><div class="mg-terminator"></div></div>
-      <div class="mg-marker"></div>
-      <div class="mg-label">GEO-SYNC // SUBCONTINENT</div>
     </div>
   </div>
 
@@ -127,7 +86,7 @@
     <div class="field city"><span class="lbl">TARGET:</span><span class="val">—</span></div>
     <div class="field region"><span class="lbl">REGION:</span><span class="val">—</span></div>
     <div class="field cls"><span class="lbl">CLASS:</span><span class="val">—</span></div>
-    <div class="field" style="margin-left:auto;"><span class="lbl">RENDER:</span><span class="val" style="color:#00d4ff;">WEBGL // 3D ORBIT</span></div>
+    <div class="field" style="margin-left:auto;"><span class="lbl">VIEW:</span><span class="val" style="color:#00d4ff;">LOCKED // SUBCONTINENT</span></div>
   </div>
 
   <!-- ===== INTEL PANEL ===== -->

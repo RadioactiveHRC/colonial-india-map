@@ -1,80 +1,95 @@
 /* ============================================================
    COLONIAL INDIA // IMAGING DATABASE NETWORK
-   3D GLOBE ENGINE (Globe.gl / three.js)
+   3D GLOBE — locked on the subcontinent, minimalist & smooth
    ============================================================ */
 
-const COL = { amber: '#f5a623', cyan: '#00d4ff', white: '#d8d8d0', olive: '#8a8c5a' };
+const COL = { amber: '#f5a623', cyan: '#00d4ff', white: '#d8d8d0' };
 const tierColor = t => t === 1 ? COL.amber : t === 2 ? COL.cyan : COL.white;
 const CLASS_OF = c => c.classification || 'LOCATION';
 
-/* India-centred initial point of view */
-const HOME_POV = { lat: 22.5, lng: 80.0, altitude: 1.5 };
+/* Fixed framing over colonial India (camera never spins away from this) */
+const HOME_POV = { lat: 21.0, lng: 80.5, altitude: 1.35 };
+
+/* Performance: cap how many Tier-3 towns are drawn (evenly sampled) */
+const T3_DISPLAY_CAP = 230;
 
 /* ============================================================
-   GLOBE INITIALISATION
+   BUILD DISPLAY SET (trim Tier 3 for performance)
+   ============================================================ */
+const ALL_T1 = CITIES.filter(c => c.tier === 1);
+const ALL_T2 = CITIES.filter(c => c.tier === 2);
+const ALL_T3 = CITIES.filter(c => c.tier === 3);
+
+let SHOWN_T3 = ALL_T3;
+if (ALL_T3.length > T3_DISPLAY_CAP) {
+  SHOWN_T3 = [];
+  const stride = ALL_T3.length / T3_DISPLAY_CAP;
+  for (let i = 0; i < T3_DISPLAY_CAP; i++) SHOWN_T3.push(ALL_T3[Math.floor(i * stride)]);
+}
+const DISPLAY = [...ALL_T1, ...ALL_T2, ...SHOWN_T3];
+
+const markerByName = {};
+DISPLAY.forEach(c => {
+  markerByName[c.name.toLowerCase()] = c;
+  if (c.alias) markerByName[c.alias.toLowerCase()] = c;
+});
+
+/* ============================================================
+   GLOBE INITIALISATION (lean settings)
    ============================================================ */
 const globeEl = document.getElementById('globe');
 
 const world = Globe()(globeEl)
-  .backgroundColor('rgba(0,0,0,0)')
+  .backgroundColor('#000000')
   .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-dark.jpg')
   .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
-  .backgroundImageUrl('https://unpkg.com/three-globe/example/img/night-sky.png')
   .showAtmosphere(true)
   .atmosphereColor(COL.amber)
-  .atmosphereAltitude(0.16)
-  .pointOfView({ lat: 20, lng: 78, altitude: 2.8 }, 0);
+  .atmosphereAltitude(0.12)
+  .pointOfView(HOME_POV, 0);
 
-/* high-detail tuning */
-try {
-  const renderer = world.renderer();
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-} catch (e) {}
-try {
-  const gmat = world.globeMaterial();
-  gmat.bumpScale = 12;
-  gmat.shininess = 6;
-} catch (e) {}
-if (typeof world.showGraticules === 'function') { try { world.showGraticules(true); } catch (e) {} }
+/* cap pixel ratio + soften bump for performance */
+try { world.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); } catch (e) {}
+try { const m = world.globeMaterial(); m.bumpScale = 5; m.shininess = 4; } catch (e) {}
 
-/* controls: orbit limits (acts as zoom bounds) + gentle auto-rotation */
+/* ---- LOCK THE CAMERA: no spin, no pan, gentle constrained zoom only ---- */
 const controls = world.controls();
+controls.enableRotate = false;   // the globe will not spin
+controls.enablePan = false;
+controls.autoRotate = false;
+controls.enableZoom = true;
 controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.rotateSpeed = 0.6;
-controls.zoomSpeed = 0.7;
-controls.minDistance = 110;   // closest orbit (globe radius = 100)
-controls.maxDistance = 600;   // farthest orbit
-controls.autoRotate = false;  // enabled after the boot fly-in settles
-controls.autoRotateSpeed = 0.16;
+controls.dampingFactor = 0.12;
+controls.zoomSpeed = 0.55;
+controls.minDistance = 150;      // ~altitude 0.5
+controls.maxDistance = 320;      // ~altitude 2.2
 
-/* pause auto-rotation while the user interacts, resume after idle */
-let idleTimer = null;
-function pauseRotate() {
-  controls.autoRotate = false;
-  if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => { controls.autoRotate = true; }, 6000);
+/* ============================================================
+   RENDER-ON-DEMAND  (pause the rAF loop while idle → smooth & low power)
+   ============================================================ */
+let pauseTimer = null;
+function wake(hold = 650) {
+  try { world.resumeAnimation(); } catch (e) {}
+  if (pauseTimer) clearTimeout(pauseTimer);
+  pauseTimer = setTimeout(() => { try { world.pauseAnimation(); } catch (e) {} updateReadouts(); }, hold);
 }
-globeEl.addEventListener('pointerdown', pauseRotate);
-globeEl.addEventListener('wheel', pauseRotate, { passive: true });
+controls.addEventListener('change', () => wake(500));
+globeEl.addEventListener('pointermove', () => wake(650));
+globeEl.addEventListener('pointerdown', () => wake(900));
+globeEl.addEventListener('wheel', () => wake(900), { passive: true });
 
 /* resize */
 function onResize() {
   world.width(globeEl.clientWidth);
   world.height(globeEl.clientHeight);
+  wake(400);
 }
 window.addEventListener('resize', onResize);
 onResize();
 
 /* ============================================================
-   CITY POINTS / RINGS / LABELS
+   CITY POINTS + (Tier-1 only) LABELS  — no pulse rings (minimalist)
    ============================================================ */
-const markerByName = {};
-CITIES.forEach(c => {
-  markerByName[c.name.toLowerCase()] = c;
-  if (c.alias) markerByName[c.alias.toLowerCase()] = c;
-});
-
 function hoverTip(d) {
   return `<div class="scene-tip">
             <span class="ht-name">${d.name.toUpperCase()}</span>
@@ -83,55 +98,37 @@ function hoverTip(d) {
 }
 
 world
-  .pointsData([])
+  .pointsData(DISPLAY)
   .pointLat('lat').pointLng('lng')
   .pointColor(d => tierColor(d.tier))
-  .pointAltitude(0.012)
-  .pointRadius(d => d.tier === 1 ? 0.42 : d.tier === 2 ? 0.3 : 0.18)
-  .pointResolution(10)
+  .pointAltitude(0.01)
+  .pointRadius(d => d.tier === 1 ? 0.4 : d.tier === 2 ? 0.28 : 0.16)
+  .pointResolution(6)
   .pointsMerge(false)
   .pointLabel(hoverTip)
   .onPointHover(d => {
-    globeEl.style.cursor = d ? 'pointer' : 'grab';
+    globeEl.style.cursor = d ? 'pointer' : 'default';
     if (d) updateBottomBar(d);
   })
-  .onPointClick(d => {
-    openIntel(d);
-    const p = world.pointOfView();
-    world.pointOfView({ lat: d.lat, lng: d.lng, altitude: Math.min(p.altitude, 1.1) }, 900);
-    pauseRotate();
-  });
+  .onPointClick(d => { openIntel(d); });
 
 world
-  .ringsData([])
-  .ringLat('lat').ringLng('lng')
-  .ringAltitude(0.012)
-  .ringColor(d => (t => {
-    const rgb = d.tier === 1 ? '245,166,35' : '0,212,255';
-    return `rgba(${rgb},${1 - t})`;
-  }))
-  .ringMaxRadius(d => d.tier === 1 ? 3.2 : 2.3)
-  .ringPropagationSpeed(1.3)
-  .ringRepeatPeriod(d => d.tier === 1 ? 1100 : 1500);
-
-world
-  .labelsData([])
+  .labelsData(ALL_T1)
   .labelLat('lat').labelLng('lng')
   .labelText(d => d.name.toUpperCase())
-  .labelColor(d => tierColor(d.tier))
-  .labelSize(d => d.tier === 1 ? 0.62 : d.tier === 2 ? 0.46 : 0.34)
+  .labelColor(() => COL.amber)
+  .labelSize(0.5)
   .labelDotRadius(0)
-  .labelAltitude(0.013)
-  .labelResolution(2)
+  .labelAltitude(0.011)
+  .labelResolution(1)
   .labelIncludeDot(false);
 
 /* ============================================================
-   POLYGON BORDERS + COLONIAL EXTENT
+   BORDERS — neighbours only + dashed colonial extent
    ============================================================ */
 let countryFeatures = [];
 let stateFeatures = [];
 
-/* Colonial extent (British India max extent) as a polygon feature + dashed ring */
 const COLONIAL_RING = [
   [71.0,35.5],[74.5,36.8],[78.0,35.2],[79.2,32.5],[81.0,30.3],
   [84.0,28.2],[88.2,27.4],[89.5,27.9],[92.0,26.9],[95.5,28.3],
@@ -146,52 +143,48 @@ const colonialFeature = {
   properties: { __kind: 'colonial' },
   geometry: { type: 'Polygon', coordinates: [COLONIAL_RING] }
 };
-
-function polyKind(f) { return (f.properties && f.properties.__kind) || 'country'; }
+const polyKind = f => (f.properties && f.properties.__kind) || 'country';
 
 world
   .polygonsData([])
-  .polygonAltitude(f => polyKind(f) === 'colonial' ? 0.011 : polyKind(f) === 'state' ? 0.006 : 0.008)
-  .polygonCapColor(f => polyKind(f) === 'colonial' ? 'rgba(201,138,46,0.10)' : 'rgba(0,0,0,0)')
+  .polygonAltitude(f => polyKind(f) === 'colonial' ? 0.012 : polyKind(f) === 'state' ? 0.006 : 0.008)
+  .polygonCapColor(f => polyKind(f) === 'colonial' ? 'rgba(201,138,46,0.08)' : 'rgba(0,0,0,0)')
   .polygonSideColor(() => 'rgba(0,0,0,0)')
   .polygonStrokeColor(f => {
     const k = polyKind(f);
     if (k === 'colonial') return 'rgba(0,0,0,0)';
-    if (k === 'state') return 'rgba(245,166,35,0.45)';
-    return 'rgba(245,166,35,0.8)';
+    if (k === 'state') return 'rgba(245,166,35,0.35)';
+    return 'rgba(245,166,35,0.7)';
   })
   .polygonsTransitionDuration(0);
 
-/* dashed colonial border via paths layer */
 world
   .pathsData([])
   .pathPoints(d => d.pts)
   .pathPointLat(p => p[1])
   .pathPointLng(p => p[0])
-  .pathColor(() => COL.amber)
-  .pathStroke(1.6)
+  .pathColor(() => 'rgba(245,166,35,0.85)')
+  .pathStroke(1.4)
   .pathDashLength(0.04)
   .pathDashGap(0.025)
-  .pathDashAnimateTime(14000)
+  .pathDashAnimateTime(0)   // static dashes (no per-frame animation)
   .pathTransitionDuration(0);
 
-/* ---- fetch GeoJSON ---- */
-const SUB_COUNTRIES = new Set([
-  'India','Pakistan','Bangladesh','Myanmar','Burma','Sri Lanka',
-  'Nepal','Bhutan','Afghanistan'
+/* neighbouring countries to render (keeps it light + focused) */
+const NEIGHBOURS = new Set([
+  'India','Pakistan','Bangladesh','Myanmar','Burma','Sri Lanka','Nepal','Bhutan',
+  'Afghanistan','China','Iran','Tajikistan','Turkmenistan','Uzbekistan',
+  'Thailand','Laos','Oman','Kazakhstan','Kyrgyzstan'
 ]);
 
 fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
   .then(r => r.ok ? r.json() : Promise.reject('countries ' + r.status))
   .then(gj => {
-    countryFeatures = (gj.features || []).map(f => {
-      f.properties = f.properties || {};
-      const nm = f.properties.ADMIN || f.properties.name || f.properties.NAME || '';
-      // keep all countries for a detailed globe, but tag the subcontinent for emphasis
-      f.properties.__kind = 'country';
-      f.properties.__sub = SUB_COUNTRIES.has(nm);
-      return f;
-    });
+    countryFeatures = (gj.features || []).filter(f => {
+      const p = f.properties || {};
+      const nm = p.ADMIN || p.name || p.NAME || '';
+      return NEIGHBOURS.has(nm);
+    }).map(f => { f.properties = f.properties || {}; f.properties.__kind = 'country'; return f; });
     refreshPolygons();
   })
   .catch(err => console.warn('[COUNTRY GEOJSON]', err));
@@ -199,11 +192,7 @@ fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/coun
 fetch('https://raw.githubusercontent.com/Subhash9325/GeoJson-Data-of-Indian-States/master/Indian_States')
   .then(r => r.ok ? r.json() : Promise.reject('states ' + r.status))
   .then(gj => {
-    stateFeatures = (gj.features || []).map(f => {
-      f.properties = f.properties || {};
-      f.properties.__kind = 'state';
-      return f;
-    });
+    stateFeatures = (gj.features || []).map(f => { f.properties = f.properties || {}; f.properties.__kind = 'state'; return f; });
     refreshPolygons();
   })
   .catch(err => console.warn('[STATE GEOJSON]', err));
@@ -218,7 +207,7 @@ const layerState = {
 
 function visibleCities() {
   if (!layerState.markers) return [];
-  return CITIES.filter(c => layerState['t' + c.tier]);
+  return DISPLAY.filter(c => layerState['t' + c.tier]);
 }
 
 function refreshPolygons() {
@@ -228,26 +217,16 @@ function refreshPolygons() {
   if (layerState.colonial) polys.push(colonialFeature);
   world.polygonsData(polys);
   world.pathsData(layerState.colonial ? [{ pts: COLONIAL_RING }] : []);
+  wake(400);
 }
 
 function refreshPoints() {
   const cities = visibleCities();
   world.pointsData(cities);
-  world.ringsData(cities.filter(c => c.tier <= 2));
-  refreshLabels();
+  world.labelsData(layerState.markers && layerState.t1 ? ALL_T1 : []);
+  wake(400);
 }
 
-function refreshLabels() {
-  const alt = world.pointOfView().altitude;
-  const cities = visibleCities().filter(c => {
-    if (c.tier === 1) return true;
-    if (c.tier === 2) return alt < 1.6;
-    return alt < 0.55; // tier 3 only when very close
-  });
-  world.labelsData(cities);
-}
-
-/* layer toggle wiring */
 document.querySelectorAll('.switch-row').forEach(row => {
   row.addEventListener('click', () => {
     const key = row.dataset.key;
@@ -281,7 +260,7 @@ const FALLBACK_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
        ${Array.from({length:22}).map((_,i)=>`<line x1="${i*30}" y1="0" x2="${i*30}" y2="360"/>`).join('')}
      </g>
      <text x="320" y="180" fill="#f5a623" font-family="monospace" font-size="18"
-       text-anchor="middle" letter-spacing="3">NO IMAGE FEED // SIGNAL LOST</text>
+       text-anchor="middle" letter-spacing="3">NO IMAGE FEED</text>
    </svg>`
 );
 
@@ -295,10 +274,8 @@ function openIntel(city) {
   elColonial.textContent = city.colonial_history;
   elClass.textContent = CLASS_OF(city);
   elImgMeta.querySelector('.f').textContent = 'FEED // ' + city.name.toUpperCase();
-
   elImg.onerror = () => { elImg.onerror = null; elImg.src = FALLBACK_IMG; };
   elImg.src = city.image || FALLBACK_IMG;
-
   intel.classList.add('open');
   updateBottomBar(city);
 }
@@ -331,26 +308,22 @@ function updateBottomBar(city) {
 }
 
 /* ============================================================
-   SEARCH
+   SEARCH  (opens intel; keeps the fixed India framing)
    ============================================================ */
 const searchInput = document.getElementById('search-input');
 const searchResults = document.getElementById('search-results');
 
-function flyToCity(city) {
-  world.pointOfView({ lat: city.lat, lng: city.lng, altitude: 0.62 }, 1500);
-  controls.autoRotate = false;
-  setTimeout(() => { openIntel(city); refreshLabels(); }, 1550);
-}
+function selectCity(city) { openIntel(city); }
 
 function renderResults(q) {
   const query = q.trim().toLowerCase();
   if (!query) { searchResults.classList.remove('show'); searchResults.innerHTML = ''; return; }
   const seen = new Set();
-  const matches = CITIES.filter(c => {
+  const matches = DISPLAY.filter(c => {
     const hit = c.name.toLowerCase().includes(query) || (c.alias && c.alias.toLowerCase().includes(query));
     if (hit && !seen.has(c.name)) { seen.add(c.name); return true; }
     return false;
-  }).slice(0, 14);
+  }).slice(0, 12);
 
   if (!matches.length) {
     searchResults.innerHTML = `<div class="search-item"><span class="nm" style="color:#7a7a72">NO MATCH IN DATABASE</span></div>`;
@@ -363,12 +336,11 @@ function renderResults(q) {
        <span class="tg">T${c.tier} // ${CLASS_OF(c)}</span>
      </div>`).join('');
   searchResults.classList.add('show');
-
   searchResults.querySelectorAll('.search-item').forEach(item => {
     const nm = item.dataset.name;
     if (!nm) return;
     item.addEventListener('click', () => {
-      flyToCity(markerByName[nm]);
+      selectCity(markerByName[nm]);
       searchResults.classList.remove('show');
       searchInput.value = markerByName[nm].name;
     });
@@ -379,8 +351,8 @@ searchInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') {
     const q = searchInput.value.trim().toLowerCase();
     const city = markerByName[q] ||
-      CITIES.find(c => c.name.toLowerCase().startsWith(q) || (c.alias && c.alias.toLowerCase().startsWith(q)));
-    if (city) { flyToCity(city); searchResults.classList.remove('show'); }
+      DISPLAY.find(c => c.name.toLowerCase().startsWith(q) || (c.alias && c.alias.toLowerCase().startsWith(q)));
+    if (city) { selectCity(city); searchResults.classList.remove('show'); }
   }
 });
 document.addEventListener('click', e => {
@@ -388,7 +360,7 @@ document.addEventListener('click', e => {
 });
 
 /* ============================================================
-   ZOOM / ALTITUDE READOUT + COORDS
+   ZOOM READOUT + COORDS  (event-driven, no polling)
    ============================================================ */
 const zVal = document.getElementById('zoom-val');
 const zFill = document.getElementById('zoom-fill');
@@ -396,31 +368,27 @@ const coordReadout = document.getElementById('coord-readout');
 
 function updateReadouts() {
   const p = world.pointOfView();
-  // magnification: closer orbit -> higher number (range ~01.0 to 12.0)
-  const mag = (1 / Math.max(p.altitude, 0.12)) * 1.5 + 1;
+  const mag = (1 / Math.max(p.altitude, 0.4)) * 1.5 + 1;
   zVal.textContent = mag.toFixed(1).padStart(4, '0');
-  const pct = (1 - (p.altitude - 0.15) / (4 - 0.15)) * 100;
+  const pct = (1 - (p.altitude - 0.5) / (2.2 - 0.5)) * 100;
   zFill.style.width = Math.max(4, Math.min(100, pct)) + '%';
-  coordReadout.textContent = `${p.lat.toFixed(3)}°N ${p.lng.toFixed(3)}°E`;
+  coordReadout.textContent = `${p.lat.toFixed(2)}°N ${p.lng.toFixed(2)}°E`;
 }
-world.onZoom(() => { updateReadouts(); refreshLabels(); });
-
-/* poll POV during rotation so the coord readout tracks the globe */
-setInterval(updateReadouts, 250);
+controls.addEventListener('change', updateReadouts);
 
 document.getElementById('zoom-in').addEventListener('click', () => {
   const p = world.pointOfView();
-  world.pointOfView({ altitude: Math.max(0.15, p.altitude * 0.65) }, 500);
-  pauseRotate();
+  world.pointOfView({ altitude: Math.max(0.5, p.altitude * 0.7) }, 450);
+  wake(700);
 });
 document.getElementById('zoom-out').addEventListener('click', () => {
   const p = world.pointOfView();
-  world.pointOfView({ altitude: Math.min(4, p.altitude * 1.5) }, 500);
-  pauseRotate();
+  world.pointOfView({ altitude: Math.min(2.2, p.altitude * 1.4) }, 450);
+  wake(700);
 });
 
 /* ============================================================
-   SESSION CLOCK + STATUS SWAP
+   SESSION CLOCK + STATUS
    ============================================================ */
 function tick() {
   const d = new Date();
@@ -432,32 +400,26 @@ function tick() {
 setInterval(tick, 1000); tick();
 
 setTimeout(() => {
-  document.getElementById('status-center').innerHTML =
-    'COLONIAL INDIA // INTEL ACTIVE<span class="cursor"></span>';
-}, 3400);
+  document.getElementById('status-center').textContent = 'COLONIAL INDIA // INTEL ACTIVE';
+}, 1800);
 
 /* ============================================================
-   BOOT SEQUENCE — loader + cinematic fly-in
+   BOOT  — brief, calm zoom-in (no spin), then settle & pause
    ============================================================ */
 function boot() {
   refreshPolygons();
   refreshPoints();
   updateReadouts();
 
-  // cinematic descent into the subcontinent
-  setTimeout(() => {
-    world.pointOfView(HOME_POV, 3200);
-  }, 700);
+  // gentle descent (no rotation) from a touch further out
+  world.pointOfView({ lat: HOME_POV.lat, lng: HOME_POV.lng, altitude: 2.1 }, 0);
+  world.resumeAnimation();
+  setTimeout(() => { world.pointOfView(HOME_POV, 1600); wake(2000); }, 250);
 
   setTimeout(() => {
     const loader = document.getElementById('loader');
-    if (loader) { loader.classList.add('hide'); setTimeout(() => loader.remove(), 700); }
-    refreshLabels();
-  }, 3100);
-
-  // enable gentle auto-rotation only after the fly-in has settled
-  setTimeout(() => { controls.autoRotate = true; }, 4400);
+    if (loader) { loader.classList.add('hide'); setTimeout(() => loader.remove(), 600); }
+  }, 1700);
 }
 window.addEventListener('load', boot);
-/* if load already fired (scripts cached), run anyway */
 if (document.readyState === 'complete') boot();

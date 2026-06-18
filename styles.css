@@ -50,11 +50,10 @@ html, body {
     to bottom,
     rgba(0, 0, 0, 0) 0px,
     rgba(0, 0, 0, 0) 2px,
-    rgba(0, 0, 0, 0.28) 3px,
-    rgba(0, 0, 0, 0.28) 4px
+    rgba(0, 0, 0, 0.16) 3px,
+    rgba(0, 0, 0, 0.16) 4px
   );
-  mix-blend-mode: multiply;
-  opacity: 0.7;
+  opacity: 0.4;
 }
 
 /* Faint vignette + flicker */
@@ -106,18 +105,6 @@ html, body {
 #globe:active { cursor: grabbing; }
 #globe canvas { display: block; }
 
-/* faint screen-space tactical grid over the globe viewport */
-#globe::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-  background-image:
-    linear-gradient(rgba(245,166,35,0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(245,166,35,0.035) 1px, transparent 1px);
-  background-size: 70px 70px;
-}
 
 /* globe.gl point hover tooltip */
 .scene-tooltip { font-family: var(--mono) !important; pointer-events: none; }
