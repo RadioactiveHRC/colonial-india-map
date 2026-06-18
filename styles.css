@@ -106,20 +106,24 @@ html, body {
 #globe canvas { display: block; }
 
 
-/* globe.gl point hover tooltip */
-.scene-tooltip { font-family: var(--mono) !important; pointer-events: none; }
-.scene-tip {
+/* math-projected hover tooltip */
+#globe-tip {
+  position: fixed;
+  display: none;
+  z-index: 6500;
+  pointer-events: none;
   background: rgba(8,8,8,0.95);
   border: 1px solid var(--amber-dim);
   padding: 4px 8px;
+  font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   box-shadow: 0 0 14px rgba(0,0,0,0.9);
   white-space: nowrap;
 }
-.scene-tip .ht-name { color: var(--amber); }
-.scene-tip .ht-cls { color: var(--cyan); font-size: 10px; display: block; margin-top: 2px; }
+#globe-tip .ht-name { color: var(--amber); }
+#globe-tip .ht-cls { color: var(--cyan); font-size: 10px; display: block; margin-top: 2px; }
 
 /* ============================================================
    CORNER BRACKETS FRAMING THE VIEWPORT

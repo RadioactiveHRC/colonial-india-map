@@ -1,20 +1,20 @@
 /* ============================================================
    COLONIAL INDIA // IMAGING DATABASE NETWORK
-   3D GLOBE — locked on the subcontinent, minimalist & smooth
+   3D GLOBE — locked, static-when-idle, no per-frame raycasting
    ============================================================ */
 
 const COL = { amber: '#f5a623', cyan: '#00d4ff', white: '#d8d8d0' };
 const tierColor = t => t === 1 ? COL.amber : t === 2 ? COL.cyan : COL.white;
 const CLASS_OF = c => c.classification || 'LOCATION';
 
-/* Fixed framing over colonial India (camera never spins away from this) */
-const HOME_POV = { lat: 21.0, lng: 80.5, altitude: 1.35 };
+/* Fixed framing over colonial India (camera never moves except button zoom) */
+const HOME_POV = { lat: 21.0, lng: 80.5, altitude: 1.4 };
 
-/* Performance: cap how many Tier-3 towns are drawn (evenly sampled) */
+/* Cap how many Tier-3 towns are drawn (evenly sampled) */
 const T3_DISPLAY_CAP = 230;
 
 /* ============================================================
-   BUILD DISPLAY SET (trim Tier 3 for performance)
+   DISPLAY SET (trim Tier 3)
    ============================================================ */
 const ALL_T1 = CITIES.filter(c => c.tier === 1);
 const ALL_T2 = CITIES.filter(c => c.tier === 2);
@@ -35,96 +35,65 @@ DISPLAY.forEach(c => {
 });
 
 /* ============================================================
-   GLOBE INITIALISATION (lean settings)
+   GLOBE INIT (lean: no bump map, capped pixel ratio)
    ============================================================ */
 const globeEl = document.getElementById('globe');
 
 const world = Globe()(globeEl)
   .backgroundColor('#000000')
   .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-dark.jpg')
-  .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
   .showAtmosphere(true)
   .atmosphereColor(COL.amber)
   .atmosphereAltitude(0.12)
   .pointOfView(HOME_POV, 0);
 
-/* cap pixel ratio + soften bump for performance */
 try { world.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); } catch (e) {}
-try { const m = world.globeMaterial(); m.bumpScale = 5; m.shininess = 4; } catch (e) {}
+try { const m = world.globeMaterial(); m.shininess = 4; } catch (e) {}
 
-/* ---- LOCK THE CAMERA: no spin, no pan, gentle constrained zoom only ---- */
+/* ---- camera fully locked (no spin, pan, or scroll-zoom) ---- */
 const controls = world.controls();
-controls.enableRotate = false;   // the globe will not spin
-controls.enablePan = false;
+controls.enabled = false;
 controls.autoRotate = false;
-controls.enableZoom = true;
-controls.enableDamping = true;
-controls.dampingFactor = 0.12;
-controls.zoomSpeed = 0.55;
-controls.minDistance = 150;      // ~altitude 0.5
-controls.maxDistance = 320;      // ~altitude 2.2
 
 /* ============================================================
-   RENDER-ON-DEMAND  (pause the rAF loop while idle → smooth & low power)
+   RENDER-ON-DEMAND
+   The animation loop runs ONLY during a zoom tween or boot.
+   When idle the globe is a static frame (0% GPU). Hover/click
+   use math projection — they never trigger a WebGL render.
    ============================================================ */
 let pauseTimer = null;
-function wake(hold = 650) {
+function wake(hold = 700) {
   try { world.resumeAnimation(); } catch (e) {}
   if (pauseTimer) clearTimeout(pauseTimer);
-  pauseTimer = setTimeout(() => { try { world.pauseAnimation(); } catch (e) {} updateReadouts(); }, hold);
+  pauseTimer = setTimeout(() => {
+    try { world.pauseAnimation(); } catch (e) {}
+    updateReadouts();
+  }, hold);
 }
-controls.addEventListener('change', () => wake(500));
-globeEl.addEventListener('pointermove', () => wake(650));
-globeEl.addEventListener('pointerdown', () => wake(900));
-globeEl.addEventListener('wheel', () => wake(900), { passive: true });
 
-/* resize */
 function onResize() {
   world.width(globeEl.clientWidth);
   world.height(globeEl.clientHeight);
-  wake(400);
+  wake(300);
 }
 window.addEventListener('resize', onResize);
 onResize();
 
 /* ============================================================
-   CITY POINTS + (Tier-1 only) LABELS  — no pulse rings (minimalist)
+   CITY DOTS — single MERGED mesh (1 draw call, no raycasting)
    ============================================================ */
-function hoverTip(d) {
-  return `<div class="scene-tip">
-            <span class="ht-name">${d.name.toUpperCase()}</span>
-            <span class="ht-cls">T${d.tier} // ${CLASS_OF(d)}</span>
-          </div>`;
-}
-
 world
   .pointsData(DISPLAY)
   .pointLat('lat').pointLng('lng')
   .pointColor(d => tierColor(d.tier))
   .pointAltitude(0.01)
-  .pointRadius(d => d.tier === 1 ? 0.4 : d.tier === 2 ? 0.28 : 0.16)
+  .pointRadius(d => d.tier === 1 ? 0.42 : d.tier === 2 ? 0.3 : 0.17)
   .pointResolution(6)
-  .pointsMerge(false)
-  .pointLabel(hoverTip)
-  .onPointHover(d => {
-    globeEl.style.cursor = d ? 'pointer' : 'default';
-    if (d) updateBottomBar(d);
-  })
-  .onPointClick(d => { openIntel(d); });
-
-world
-  .labelsData(ALL_T1)
-  .labelLat('lat').labelLng('lng')
-  .labelText(d => d.name.toUpperCase())
-  .labelColor(() => COL.amber)
-  .labelSize(0.5)
-  .labelDotRadius(0)
-  .labelAltitude(0.011)
-  .labelResolution(1)
-  .labelIncludeDot(false);
+  .pointsMerge(true)
+  .pointsTransitionDuration(0);
 
 /* ============================================================
-   BORDERS — neighbours only + dashed colonial extent
+   BORDERS — neighbours only + dashed colonial extent (static)
    ============================================================ */
 let countryFeatures = [];
 let stateFeatures = [];
@@ -153,7 +122,7 @@ world
   .polygonStrokeColor(f => {
     const k = polyKind(f);
     if (k === 'colonial') return 'rgba(0,0,0,0)';
-    if (k === 'state') return 'rgba(245,166,35,0.35)';
+    if (k === 'state') return 'rgba(245,166,35,0.32)';
     return 'rgba(245,166,35,0.7)';
   })
   .polygonsTransitionDuration(0);
@@ -167,10 +136,9 @@ world
   .pathStroke(1.4)
   .pathDashLength(0.04)
   .pathDashGap(0.025)
-  .pathDashAnimateTime(0)   // static dashes (no per-frame animation)
+  .pathDashAnimateTime(0)
   .pathTransitionDuration(0);
 
-/* neighbouring countries to render (keeps it light + focused) */
 const NEIGHBOURS = new Set([
   'India','Pakistan','Bangladesh','Myanmar','Burma','Sri Lanka','Nepal','Bhutan',
   'Afghanistan','China','Iran','Tajikistan','Turkmenistan','Uzbekistan',
@@ -221,9 +189,7 @@ function refreshPolygons() {
 }
 
 function refreshPoints() {
-  const cities = visibleCities();
-  world.pointsData(cities);
-  world.labelsData(layerState.markers && layerState.t1 ? ALL_T1 : []);
+  world.pointsData(visibleCities());
   wake(400);
 }
 
@@ -235,6 +201,66 @@ document.querySelectorAll('.switch-row').forEach(row => {
     refreshPolygons();
     refreshPoints();
   });
+});
+
+/* ============================================================
+   MATH-BASED HOVER / CLICK PICKING (no WebGL render needed)
+   ============================================================ */
+const tipEl = document.createElement('div');
+tipEl.id = 'globe-tip';
+document.body.appendChild(tipEl);
+
+function angDist(la1, lo1, la2, lo2) {
+  const R = Math.PI / 180;
+  const a = Math.sin(la1 * R) * Math.sin(la2 * R) +
+            Math.cos(la1 * R) * Math.cos(la2 * R) * Math.cos((lo1 - lo2) * R);
+  return Math.acos(Math.max(-1, Math.min(1, a))) / R; // degrees
+}
+const pickRadius = c => c.tier === 1 ? 16 : c.tier === 2 ? 13 : 9;
+
+function pickCity(clientX, clientY) {
+  const rect = globeEl.getBoundingClientRect();
+  const x = clientX - rect.left, y = clientY - rect.top;
+  const pov = world.pointOfView();
+  const cities = visibleCities();
+  let best = null, bestD = Infinity;
+  for (let i = 0; i < cities.length; i++) {
+    const c = cities[i];
+    if (angDist(pov.lat, pov.lng, c.lat, c.lng) > 88) continue; // skip far side
+    const sc = world.getScreenCoords(c.lat, c.lng, 0.01);
+    if (!sc) continue;
+    const r = pickRadius(c);
+    const dx = sc.x - x, dy = sc.y - y, d = dx * dx + dy * dy;
+    if (d <= r * r && d < bestD) { bestD = d; best = c; }
+  }
+  return best;
+}
+
+let hoverTs = 0, hoveredCity = null;
+globeEl.addEventListener('pointermove', e => {
+  const now = performance.now();
+  if (now - hoverTs < 50) return;
+  hoverTs = now;
+  const c = pickCity(e.clientX, e.clientY);
+  if (c) {
+    globeEl.style.cursor = 'pointer';
+    tipEl.innerHTML =
+      `<span class="ht-name">${c.name.toUpperCase()}</span>` +
+      `<span class="ht-cls">T${c.tier} // ${CLASS_OF(c)}</span>`;
+    tipEl.style.display = 'block';
+    tipEl.style.left = (e.clientX + 14) + 'px';
+    tipEl.style.top = (e.clientY - 8) + 'px';
+    if (c !== hoveredCity) { updateBottomBar(c); hoveredCity = c; }
+  } else {
+    globeEl.style.cursor = 'default';
+    tipEl.style.display = 'none';
+    hoveredCity = null;
+  }
+});
+globeEl.addEventListener('pointerleave', () => { tipEl.style.display = 'none'; });
+globeEl.addEventListener('click', e => {
+  const c = pickCity(e.clientX, e.clientY);
+  if (c) openIntel(c);
 });
 
 /* ============================================================
@@ -308,12 +334,10 @@ function updateBottomBar(city) {
 }
 
 /* ============================================================
-   SEARCH  (opens intel; keeps the fixed India framing)
+   SEARCH (opens intel; keeps the fixed framing)
    ============================================================ */
 const searchInput = document.getElementById('search-input');
 const searchResults = document.getElementById('search-results');
-
-function selectCity(city) { openIntel(city); }
 
 function renderResults(q) {
   const query = q.trim().toLowerCase();
@@ -340,7 +364,7 @@ function renderResults(q) {
     const nm = item.dataset.name;
     if (!nm) return;
     item.addEventListener('click', () => {
-      selectCity(markerByName[nm]);
+      openIntel(markerByName[nm]);
       searchResults.classList.remove('show');
       searchInput.value = markerByName[nm].name;
     });
@@ -352,7 +376,7 @@ searchInput.addEventListener('keydown', e => {
     const q = searchInput.value.trim().toLowerCase();
     const city = markerByName[q] ||
       DISPLAY.find(c => c.name.toLowerCase().startsWith(q) || (c.alias && c.alias.toLowerCase().startsWith(q)));
-    if (city) { selectCity(city); searchResults.classList.remove('show'); }
+    if (city) { openIntel(city); searchResults.classList.remove('show'); }
   }
 });
 document.addEventListener('click', e => {
@@ -360,7 +384,7 @@ document.addEventListener('click', e => {
 });
 
 /* ============================================================
-   ZOOM READOUT + COORDS  (event-driven, no polling)
+   ZOOM READOUT + COORDS
    ============================================================ */
 const zVal = document.getElementById('zoom-val');
 const zFill = document.getElementById('zoom-fill');
@@ -374,21 +398,20 @@ function updateReadouts() {
   zFill.style.width = Math.max(4, Math.min(100, pct)) + '%';
   coordReadout.textContent = `${p.lat.toFixed(2)}°N ${p.lng.toFixed(2)}°E`;
 }
-controls.addEventListener('change', updateReadouts);
 
 document.getElementById('zoom-in').addEventListener('click', () => {
   const p = world.pointOfView();
-  world.pointOfView({ altitude: Math.max(0.5, p.altitude * 0.7) }, 450);
-  wake(700);
+  world.pointOfView({ altitude: Math.max(0.5, p.altitude * 0.72) }, 420);
+  wake(650);
 });
 document.getElementById('zoom-out').addEventListener('click', () => {
   const p = world.pointOfView();
-  world.pointOfView({ altitude: Math.min(2.2, p.altitude * 1.4) }, 450);
-  wake(700);
+  world.pointOfView({ altitude: Math.min(2.2, p.altitude * 1.38) }, 420);
+  wake(650);
 });
 
 /* ============================================================
-   SESSION CLOCK + STATUS
+   CLOCK + STATUS
    ============================================================ */
 function tick() {
   const d = new Date();
@@ -404,17 +427,15 @@ setTimeout(() => {
 }, 1800);
 
 /* ============================================================
-   BOOT  — brief, calm zoom-in (no spin), then settle & pause
+   BOOT — brief calm zoom-in, then settle & freeze
    ============================================================ */
 function boot() {
   refreshPolygons();
   refreshPoints();
   updateReadouts();
 
-  // gentle descent (no rotation) from a touch further out
-  world.pointOfView({ lat: HOME_POV.lat, lng: HOME_POV.lng, altitude: 2.1 }, 0);
-  world.resumeAnimation();
-  setTimeout(() => { world.pointOfView(HOME_POV, 1600); wake(2000); }, 250);
+  world.pointOfView({ lat: HOME_POV.lat, lng: HOME_POV.lng, altitude: 2.0 }, 0);
+  setTimeout(() => { world.pointOfView(HOME_POV, 1500); wake(1900); }, 250);
 
   setTimeout(() => {
     const loader = document.getElementById('loader');
