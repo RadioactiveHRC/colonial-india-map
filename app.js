@@ -11,7 +11,7 @@ const CLASS_OF = c => c.classification || 'LOCATION';
 const HOME_POV = { lat: 21.0, lng: 80.5, altitude: 1.4 };
 
 /* Cap how many Tier-3 towns are drawn (evenly sampled) */
-const T3_DISPLAY_CAP = 230;
+const T3_DISPLAY_CAP = 120;
 
 /* ============================================================
    DISPLAY SET (trim Tier 3)
@@ -41,14 +41,21 @@ const globeEl = document.getElementById('globe');
 
 const world = Globe()(globeEl)
   .backgroundColor('#000000')
-  .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-dark.jpg')
-  .showAtmosphere(true)
-  .atmosphereColor(COL.amber)
-  .atmosphereAltitude(0.12)
+  .showGlobe(true)
+  .showAtmosphere(false)          // no atmosphere shader pass
   .pointOfView(HOME_POV, 0);
 
-try { world.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); } catch (e) {}
-try { const m = world.globeMaterial(); m.shininess = 4; } catch (e) {}
+/* force pixel ratio 1 (huge fragment-count reduction on HiDPI screens) */
+try { world.renderer().setPixelRatio(1); } catch (e) {}
+/* solid dark globe instead of a photographic texture — cheapest per-frame fill */
+try {
+  const m = world.globeMaterial();
+  if (m.color) m.color.set('#0a0e16');
+  if (m.emissive) m.emissive.set('#06080e');
+  m.shininess = 1;
+  if (m.bumpMap) m.bumpMap = null;
+  if (m.map) m.map = null;
+} catch (e) {}
 
 /* ---- camera fully locked (no spin, pan, or scroll-zoom) ---- */
 const controls = world.controls();
